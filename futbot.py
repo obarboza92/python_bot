@@ -1,17 +1,40 @@
-from telegram import Update
 from telegram.ext import Updater, CommandHandler, MessageHandler, CallbackContext, Filters
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Updater, CommandHandler, CallbackContext , CallbackQueryHandler
-
-# Reemplaza 'TU_TOKEN' con el token que obtuviste de BotFather
-TOKEN = '6604926746:AAHRGraw5JHQhh5cUzqJsrFKMlLJJdprp_I'
+from datetime import time, datetime, timedelta
+from pytz import timezone 
 
 # VARIABLES GLOBALES
 # Lista de administradores (reemplaza con los IDs de usuario de los administradores del grupo)
 administradores = ['obarboza92']
-lista_personas = []  # Usamos un conjunto para almacenar las personas y evitar duplicados
+lista_personas = []  # conjunto para almacenar las personas y evitar duplicados
 usuarios_que_usaron_voy = set()
 usuarios_que_usaron_no_voy = set()
+TOKEN = '6604926746:AAHRGraw5JHQhh5cUzqJsrFKMlLJJdprp_I'
+chat_id = '-1002047341203' # https://api.telegram.org/bot6604926746:AAHRGraw5JHQhh5cUzqJsrFKMlLJJdprp_I/getUpdates
+
+#obtener chat id
+def obtener_chat_id(update, context):
+    chat_id = update.message.chat_id
+    update.message.reply_text(f'El ID del chat es: {chat_id}')
+
+
+# Mensajes automaticos
+def enviar_recordatorio(context: CallbackContext):
+    print("Dentro de enviar_recordatorio")
+    try:
+        chat_id = int(context.job.context)  # Asegúrate de que el chat_id sea un entero
+        print(f"ID del chat: {chat_id}")
+
+        # Verificar si hay espacios disponibles en la lista
+        campos_disponibles = 10 - len(lista_personas)
+        if campos_disponibles > 0:
+            mensaje = f"¡FICHAS FICHAS!\n Apuntese en la mejenga con el comando /voy para agregar su nombre. \n Si quiere agregar a otra persona con /agregar + nombre \n Espacios disponibles: {campos_disponibles} \n Atte: Blatter"
+            context.bot.send_message(chat_id=chat_id, text=mensaje)
+        else:
+            print("No hay espacios disponibles en la lista.")
+    except Exception as e:
+        print(f"Error al enviar el mensaje: {str(e)}")
 
 #MANEJO DE BOTONES
 def ayuda_interactiva(update: Update, context: CallbackContext) -> None:
@@ -85,7 +108,7 @@ def agregar(update: Update, context: CallbackContext) -> None:
         lista_personas.append({'user_id': user_id, 'nombre': nombre})
         numero_persona = len(lista_personas)
         update.message.reply_text(f'{nombre} ha sido agregado a la lista como la persona número {numero_persona}. \n'
-                                  f'Campos disponibles restantes: {campos_disponibles}')
+                                  f'Campos: {campos_disponibles}')
     elif campos_disponibles == 0:
         update.message.reply_text('La lista está llena. No se pueden agregar más personas.')
     else:
@@ -167,8 +190,8 @@ def lista(update: Update, context: CallbackContext) -> None:
 
 def main() -> None:
     updater = Updater(TOKEN, use_context=True)
-
     dp = updater.dispatcher
+    jq = updater.job_queue
 
     # Define los comandos y su correspondiente función
     dp.add_handler(CommandHandler("start", start))
@@ -181,16 +204,48 @@ def main() -> None:
     dp.add_handler(CommandHandler("lista", lista))
     dp.add_handler(CommandHandler("disponible", disponible))
     dp.add_handler(CommandHandler("ayuda_interactiva", ayuda_interactiva))
+    dp.add_handler(CommandHandler("obtener_chat_id", obtener_chat_id))
     dp.add_handler(MessageHandler(Filters.command & Filters.user(administradores), administrar_grupo))
 
-     # Manejador para comandos no reconocidos
+    
+    # Inicia el bot
+    updater.start_polling()
+
+    # Manejador para comandos no reconocidos
     dp.add_handler(MessageHandler(Filters.command, comando_desconocido))
 
     # Manejador para botones
     dp.add_handler(CallbackQueryHandler(button_callback))
 
-    # Inicia el bot
-    updater.start_polling()
+    # Mensajes automaticos
+
+    # Configuración de zona horaria (reemplaza 'nombre_de_tu_zona_horaria' con la zona horaria adecuada)
+    tz = timezone('America/Chicago')
+    
+    # Obtener la hora actual en la zona horaria especificada
+    now = datetime.now(tz)
+
+    # Imprimir la hora actual en formato legible
+    print(f'Hora actual en {tz.zone}: {now.strftime("%A, %B %d, %Y, %I:%M %p")}')
+
+
+    # Configurar los tiempos para enviar el mensaje recordatorio
+    horarios = [(8, 0), (15, 0), (19, 0)]
+
+    for hora, minuto in horarios:
+        # Crear un objeto datetime para la fecha y hora actual
+        ahora = datetime.now(tz)
+
+        # Crear un objeto datetime con la misma fecha, pero con la nueva hora y minuto
+        hora_utc = ahora.replace(hour=hora, minute=minuto, second=0, microsecond=0)
+
+        # Convertir la hora local a UTC
+        hora_utc = hora_utc.astimezone(timezone('UTC')).time()
+
+        # Configurar el trabajo diario
+        jq.run_daily(enviar_recordatorio, time=hora_utc, days=(0, 1, 2, 3, 4, 5, 6), context=chat_id)
+
+        print(f"Job programado para enviar el recordatorio diario a las {hora}:{minuto}.")
 
     # Ejecuta el bot hasta que presiones Ctrl+C
     updater.idle()
